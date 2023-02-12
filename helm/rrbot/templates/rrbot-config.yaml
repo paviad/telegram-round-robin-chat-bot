@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rrbot-config
+data:
+  Telegram__ApiKey: "__PLACEHOLDER__"
+  ConnectionStrings__DefaultConnection: "__PLACEHOLDER__"

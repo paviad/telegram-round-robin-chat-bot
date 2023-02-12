@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace LocalConsoleTest.Data.Migrations
+namespace RrBot.Migrations
 {
     /// <inheritdoc />
     public partial class Initial : Migration
@@ -14,15 +14,15 @@ namespace LocalConsoleTest.Data.Migrations
                 name: "Games",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    Name = table.Column<string>(type: "TEXT", nullable: false),
-                    TurnNumber = table.Column<int>(type: "INTEGER", nullable: false),
-                    IsRunning = table.Column<bool>(type: "INTEGER", nullable: false),
-                    IsArchived = table.Column<bool>(type: "INTEGER", nullable: false),
-                    TelegramChannelId = table.Column<long>(type: "INTEGER", nullable: false),
-                    TelegramThreadId = table.Column<int>(type: "INTEGER", nullable: false),
-                    ResetPassword = table.Column<string>(type: "TEXT", nullable: true)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Name = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    TurnNumber = table.Column<int>(type: "int", nullable: false),
+                    IsRunning = table.Column<bool>(type: "bit", nullable: false),
+                    IsArchived = table.Column<bool>(type: "bit", nullable: false),
+                    TelegramChannelId = table.Column<long>(type: "bigint", nullable: false),
+                    TelegramThreadId = table.Column<int>(type: "int", nullable: false),
+                    ResetPassword = table.Column<string>(type: "nvarchar(max)", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -33,9 +33,8 @@ namespace LocalConsoleTest.Data.Migrations
                 name: "Persons",
                 columns: table => new
                 {
-                    TelegramId = table.Column<long>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    InitiatedPrivateChat = table.Column<bool>(type: "INTEGER", nullable: false)
+                    TelegramId = table.Column<long>(type: "bigint", nullable: false),
+                    InitiatedPrivateChat = table.Column<bool>(type: "bit", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -46,14 +45,14 @@ namespace LocalConsoleTest.Data.Migrations
                 name: "Players",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    TelegramId = table.Column<long>(type: "INTEGER", nullable: false),
-                    Name = table.Column<string>(type: "TEXT", nullable: true),
-                    Played = table.Column<bool>(type: "INTEGER", nullable: false),
-                    IsDm = table.Column<bool>(type: "INTEGER", nullable: false),
-                    DisplayName = table.Column<string>(type: "TEXT", nullable: false),
-                    GameId = table.Column<int>(type: "INTEGER", nullable: false)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    TelegramId = table.Column<long>(type: "bigint", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Played = table.Column<bool>(type: "bit", nullable: false),
+                    IsDm = table.Column<bool>(type: "bit", nullable: false),
+                    DisplayName = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    GameId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -76,13 +75,13 @@ namespace LocalConsoleTest.Data.Migrations
                 name: "Messages",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    TelegramMessageId = table.Column<int>(type: "INTEGER", nullable: false),
-                    GameId = table.Column<int>(type: "INTEGER", nullable: false),
-                    Turn = table.Column<int>(type: "INTEGER", nullable: false),
-                    PlayerId = table.Column<int>(type: "INTEGER", nullable: false),
-                    Text = table.Column<string>(type: "TEXT", nullable: false)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    TelegramMessageId = table.Column<int>(type: "int", nullable: false),
+                    GameId = table.Column<int>(type: "int", nullable: false),
+                    Turn = table.Column<int>(type: "int", nullable: false),
+                    PlayerId = table.Column<int>(type: "int", nullable: false),
+                    Text = table.Column<string>(type: "nvarchar(max)", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -97,8 +96,7 @@ namespace LocalConsoleTest.Data.Migrations
                         name: "FK_Messages_Players_PlayerId",
                         column: x => x.PlayerId,
                         principalTable: "Players",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateIndex(

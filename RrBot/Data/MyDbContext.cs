@@ -1,7 +1,7 @@
-﻿using LocalConsoleTest.Data.Models;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
+using RrBot.Data.Models;
 
-namespace LocalConsoleTest.Data;
+namespace RrBot.Data;
 
 internal class MyDbContext : DbContext {
     public MyDbContext() { }
@@ -30,6 +30,7 @@ internal class MyDbContext : DbContext {
 
         modelBuilder.Entity<Person>(e => {
             e.HasKey(r => r.TelegramId);
+            e.Property(r => r.TelegramId).ValueGeneratedNever();
 
             e.HasMany(r => r.Players).WithOne().HasForeignKey(r => r.TelegramId);
         });
@@ -46,7 +47,7 @@ internal class MyDbContext : DbContext {
             e.Property(r => r.Id).ValueGeneratedOnAdd();
 
             e.HasOne(r => r.Game).WithMany();
-            e.HasOne(r => r.Player).WithMany();
+            e.HasOne(r => r.Player).WithMany().OnDelete(DeleteBehavior.NoAction);
         });
     }
 }

@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rrbot-app
+  labels:
+    app: rrbot-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rrbot-app
+  template:
+    metadata:
+      labels:
+        app: rrbot-app
+    spec:
+      imagePullSecrets:
+        - name: armadillo
+      containers:
+        - name: rrbot-pod
+          image: armadillo.azurecr.io/rrbot:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+            - containerPort: 6664
+          envFrom:
+          - configMapRef:
+              name: rrbot-config

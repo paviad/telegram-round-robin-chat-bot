@@ -1,4 +1,4 @@
-﻿namespace LocalConsoleTest.Data.Models;
+﻿namespace RrBot.Data.Models;
 
 internal class Message {
     public int Id { get; set; }
@@ -7,6 +7,7 @@ internal class Message {
     public int Turn { get; set; }
     public int PlayerId { get; set; }
     public string Text { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
 
     public Game Game { get; set; }
     public Player Player { get; set; }

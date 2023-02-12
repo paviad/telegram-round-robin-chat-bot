@@ -1,4 +1,4 @@
-﻿namespace LocalConsoleTest.Data.Models;
+﻿namespace RrBot.Data.Models;
 
 internal class Player {
     public Player() { }

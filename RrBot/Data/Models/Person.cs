@@ -1,4 +1,4 @@
-﻿namespace LocalConsoleTest.Data.Models;
+﻿namespace RrBot.Data.Models;
 
 internal class Person {
     public long TelegramId { get; set; }
