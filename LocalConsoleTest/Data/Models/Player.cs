@@ -1,11 +1,9 @@
 ﻿namespace LocalConsoleTest.Data.Models;
 
-internal class Player
-{
+internal class Player {
     public Player() { }
 
-    public Player(long telegramId, string? name, bool played, string displayName)
-    {
+    public Player(long telegramId, string? name, bool played, string displayName) {
         Name = name;
         Played = played;
         DisplayName = displayName;

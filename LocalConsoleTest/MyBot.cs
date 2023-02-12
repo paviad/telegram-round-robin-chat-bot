@@ -1,5 +1,6 @@
 ﻿using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -10,6 +11,7 @@ using Game = LocalConsoleTest.Data.Models.Game;
 namespace LocalConsoleTest;
 
 internal class MyBot : TelegramBotClient, IUpdateHandler, IUpdateReceiver {
+    private readonly ILogger<MyBot> _logger;
     private readonly IServiceProvider _svcp;
 
     //public MyBot(TelegramBotClientOptions options, HttpClient? httpClient = null) : base(options, httpClient) { }
@@ -17,15 +19,17 @@ internal class MyBot : TelegramBotClient, IUpdateHandler, IUpdateReceiver {
     //public MyBot(string token, HttpClient? httpClient = null) : base(token, httpClient) { }
 
     [UsedImplicitly]
-    public MyBot(IOptions<TelegramOptions> opts, IServiceProvider svcp) :
+    public MyBot(IOptions<TelegramOptions> opts, IServiceProvider svcp, ILogger<MyBot> logger) :
         base(opts.Value.ApiKey) {
         _svcp = svcp;
+        _logger = logger;
     }
 
     public async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update,
         CancellationToken cancellationToken) {
         using var scope = _svcp.CreateScope();
-        var gameRepository = scope.ServiceProvider.GetRequiredService<GameManager>();
+        var repository = scope.ServiceProvider.GetRequiredService<Repository>();
+        var gameManager = scope.ServiceProvider.GetRequiredService<GameManager>();
         var messageOrEditedMessage = update.Message ?? update.EditedMessage;
 
         if (messageOrEditedMessage?.From is null) {
@@ -34,8 +38,8 @@ internal class MyBot : TelegramBotClient, IUpdateHandler, IUpdateReceiver {
 
         var chatId = messageOrEditedMessage.Chat.Id;
         var threadId = messageOrEditedMessage.MessageThreadId ?? 0;
-        Console.WriteLine("chatid {0} {1}", chatId, messageOrEditedMessage.MessageThreadId);
-        var game = await gameRepository.GetRunningGame(chatId, threadId);
+        _logger.LogInformation("chatid {chatId} {threadId}", chatId, messageOrEditedMessage.MessageThreadId);
+        var game = await repository.GetRunningGame(chatId, threadId, cancellationToken);
 
         var fromName = new[] { messageOrEditedMessage.From.FirstName, messageOrEditedMessage.From.LastName }
             .Where(r => r is not null)
@@ -58,23 +62,23 @@ internal class MyBot : TelegramBotClient, IUpdateHandler, IUpdateReceiver {
             TheDm: game.Players.SingleOrDefault(r => r.IsDm)
         );
 
-        gameRepository.Context = context;
+        gameManager.Context = context;
 
-        await gameRepository.HandleUpdate();
+        await gameManager.HandleUpdate();
 
-        var privateMessage = gameRepository.PrivateOutput.ToString();
+        var privateMessage = gameManager.PrivateOutput.ToString();
 
         if (!string.IsNullOrWhiteSpace(privateMessage)) {
             await Prv(botClient, messageOrEditedMessage.From.Id, privateMessage, cancellationToken);
         }
 
-        var publicMessage = gameRepository.PublicOutput.ToString();
+        var publicMessage = gameManager.PublicOutput.ToString();
 
         if (!string.IsNullOrWhiteSpace(publicMessage)) {
             await Snd(botClient, game, publicMessage, cancellationToken);
         }
 
-        await gameRepository.Save();
+        await repository.Save(cancellationToken);
     }
 
     public Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception,

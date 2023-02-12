@@ -1,65 +1,36 @@
 ﻿using System.Text;
-using LocalConsoleTest.Data;
 using LocalConsoleTest.Data.Models;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Telegram.Bot;
-using Game = LocalConsoleTest.Data.Models.Game;
 
 namespace LocalConsoleTest;
 
 internal class GameManager {
-    private readonly MyDbContext _dc;
+    private readonly ILogger<GameManager> _logger;
+    private readonly Repository _repository;
     private bool _anyPrivate;
     private bool _anyPublic;
 
-    public GameManager(MyDbContext dc) {
-        _dc = dc;
+    public GameManager(Repository repository, ILogger<GameManager> logger) {
+        _repository = repository;
+        _logger = logger;
     }
 
     public StringBuilder PublicOutput { get; } = new();
     public StringBuilder PrivateOutput { get; } = new();
-    public GameContext Context { get; set; }
-
-    public async Task<Game> GetRunningGame(long channelId, int threadId) {
-        var game = await _dc.Games
-            .Include(r => r.Players)
-            .FirstOrDefaultAsync(
-                r => r.TelegramChannelId == channelId && r.TelegramThreadId == threadId && !r.IsArchived,
-                cancellationToken: Context.CancellationToken);
-
-        if (game is not null) {
-            return game;
-        }
-
-        var newGame = new Game {
-            Name = "The Game",
-            TurnNumber = 1,
-            TelegramChannelId = channelId,
-            TelegramThreadId = threadId,
-        };
-        await _dc.Games.AddAsync(newGame, Context.CancellationToken);
-        await _dc.SaveChangesAsync(Context.CancellationToken);
-        return newGame;
-    }
+    public GameContext Context { get; set; } = null!;
 
     public async Task HandleUpdate() {
         if (Context is { IsEdit: true, IsPrivateMessage: false }) {
-            await HandleEdit(Context.CancellationToken);
+            await HandleEdit();
             return;
         }
 
-        var dmMention = Context.TheDm is not null ? Mention(Context.TheDm) : null;
-        var playerMentions = Context.Game.Players.Where(r => !r.IsDm).Select(Mention).DefaultIfEmpty("")
-            .Aggregate((x, y) => $"{x}, {y}");
-        var pInGame = Context.Game.Players.Any()
-            ? $"DM: {dmMention}\nCurrent players: {playerMentions}"
-            : "No one has joined the game yet.";
-
         if (Context.IsMemberAddedNotification) {
-            await HandleMemberAdded(pInGame);
+            await HandleMemberAdded();
         }
         else {
-            Console.WriteLine($"{Context.SenderUsername}: {Context.MessageText}");
+            _logger.LogInformation("{user}: {msg}", Context.SenderUsername, Context.MessageText);
 
             if (Context.IsPrivateMessage) {
                 await HandlePrivateMessage();
@@ -101,7 +72,7 @@ internal class GameManager {
                 CmdHelp();
             }
             else if (Context.MessageText == "/status") {
-                CmdStatus(pInGame);
+                CmdStatus();
             }
             else if (Context.MessageText == "/nudge") { }
             else if (Context.MessageText?.StartsWith("/showturn ") ?? false) {
@@ -113,20 +84,16 @@ internal class GameManager {
         }
     }
 
-    public async Task Save() {
-        await _dc.SaveChangesAsync(Context.CancellationToken);
-    }
+    private void CheckIfEveryoneTalkedAndAdvanceTurn() {
+        if (Context.Game.Players.All(r => r.Played)) {
+            foreach (var player in Context.Game.Players) {
+                player.Played = false;
+            }
 
-    private async Task AddMessage(Game game, Player player, string text, int telegramMessageId) {
-        var msg = new Message {
-            GameId = game.Id,
-            PlayerId = player.Id,
-            Text = text,
-            TelegramMessageId = telegramMessageId,
-            Turn = game.TurnNumber,
-        };
-
-        await _dc.Messages.AddAsync(msg, Context.CancellationToken);
+            Context.Game.TurnNumber++;
+            Snd("All players have spoken, a new turn has begun!");
+            Snd($"This is turn #{Context.Game.TurnNumber}");
+        }
     }
 
     private async Task CmdEndGameConfirmed() {
@@ -144,8 +111,9 @@ internal class GameManager {
         if (any) {
             // Archive existing game
             Context.Game.IsArchived = true;
+            await _repository.Save();
             Context = Context with {
-                Game = await GetRunningGame(Context.Game.TelegramChannelId, Context.Game.TelegramThreadId)
+                Game = await _repository.GetRunningGame(Context.Game.TelegramChannelId, Context.Game.TelegramThreadId),
             };
         }
 
@@ -200,7 +168,8 @@ internal class GameManager {
     }
 
     private void CmdKickWithArgs() {
-        if (!int.TryParse(Context.MessageText![6..], out var plrNumber) || plrNumber < 1 || plrNumber > Context.Game.Players.Count) {
+        if (!int.TryParse(Context.MessageText![6..], out var plrNumber) || plrNumber < 1 ||
+            plrNumber > Context.Game.Players.Count) {
             var plrs = Context.Game.Players.Select((r, i) => $"{i + 1}. {Mention(r)}").Aggregate((x, y) => $"{x}\n{y}");
             Snd(plrs);
             Snd();
@@ -211,6 +180,8 @@ internal class GameManager {
         var plrRemoved = Context.Game.Players.ElementAt(plrNumber - 1);
         Context.Game.Players.Remove(plrRemoved);
         Snd($"{Mention(plrRemoved)} has been removed from the game (but may still rejoin).");
+
+        CheckIfEveryoneTalkedAndAdvanceTurn();
     }
 
     private void CmdPause() {
@@ -230,7 +201,6 @@ internal class GameManager {
     }
 
     private void CmdPlay() {
-        var dmMention = Context.TheDm is not null ? Mention(Context.TheDm) : null;
         if (!Context.Game.IsRunning && !Context.Game.Players.Any()) {
             Snd("Game has not been started in this channel yet. " +
                 "To start the game, the designated DM should type /start");
@@ -244,28 +214,16 @@ internal class GameManager {
             return;
         }
 
-        if (Context.Game.Players.All(r => !r.Played)) {
-            Context.Game.Players.Add(new Player(Context.SenderId, Context.SenderUsername, false, Context.SenderFullName));
-            var playerMentions2 = Context.Game.Players.Where(r => !r.IsDm).Select(Mention).DefaultIfEmpty("")
-                .Aggregate((x, y) => $"{x}, {y}");
-            var pInGame2 = Context.Game.Players.Any()
-                ? $"DM: {dmMention}\nCurrent players: {playerMentions2}"
-                : "No one has joined the game yet.";
-            Snd(pInGame2);
-            Snd();
-            Snd($"{Context.SenderFullName} has just joined. No one has spoken yet, so they may begin speaking immediately.");
-        }
-        else {
-            Context.Game.Players.Add(new Player(Context.SenderId, Context.SenderUsername, true, Context.SenderFullName));
-            var playerMentions2 = Context.Game.Players.Where(r => !r.IsDm).Select(Mention).DefaultIfEmpty("")
-                .Aggregate((x, y) => $"{x}, {y}");
-            var pInGame2 = Context.Game.Players.Any()
-                ? $"DM: {dmMention}\nCurrent players: {playerMentions2}"
-                : "No one has joined the game yet.";
-            Snd(pInGame2);
-            Snd();
-            Snd($"{Context.SenderFullName} has just joined and must wait for the next turn before they can speak.");
-        }
+        var canSpeak = Context.Game.Players.All(r => !r.Played);
+
+        Context.Game.Players.Add(
+            new Player(Context.SenderId, Context.SenderUsername, !canSpeak, Context.SenderFullName));
+
+        Snd(GetGamePlayersText());
+        Snd();
+        Snd(canSpeak
+            ? $"{Context.SenderFullName} has just joined. No one has spoken yet, so they may begin speaking immediately."
+            : $"{Context.SenderFullName} has just joined and must wait for the next turn before they can speak.");
     }
 
     private void CmdResume() {
@@ -302,7 +260,7 @@ internal class GameManager {
             return;
         }
 
-        var messages = (await GetMessages(Context.Game, turnReq)).ToList();
+        var messages = (await _repository.GetMessages(Context.Game, turnReq)).ToList();
 
         if (messages.Count == 0) {
             Snd($"No messages found for turn {turnReq}");
@@ -332,13 +290,16 @@ internal class GameManager {
         if (any) {
             // Archive existing game
             Context.Game.IsArchived = true;
-            Context = Context with { Game = await GetRunningGame(Context.Game.TelegramChannelId, Context.Game.TelegramThreadId) };
+            Context = Context with {
+                Game = await _repository.GetRunningGame(Context.Game.TelegramChannelId, Context.Game.TelegramThreadId),
+            };
         }
 
         Context.Game.IsRunning = true;
         Context.Game.Players.Clear();
 
-        Context.Game.Players.Add(new Player(Context.SenderId, Context.SenderUsername, false, Context.SenderFullName) { IsDm = true });
+        Context.Game.Players.Add(
+            new Player(Context.SenderId, Context.SenderUsername, false, Context.SenderFullName) { IsDm = true });
 
         Snd("Game has started.");
     }
@@ -365,7 +326,7 @@ internal class GameManager {
         Snd($"Wrong confirmation code. If you're really sure, then type /start {Context.Game.ResetPassword}");
     }
 
-    private void CmdStatus(string pInGame) {
+    private void CmdStatus() {
         if (!Context.Game.IsRunning && !Context.Game.Players.Any()) {
             Snd("Game has not been started in this channel yet. To start a game the designated DM should type /start");
             return;
@@ -387,52 +348,24 @@ internal class GameManager {
 
         var paused = Context.Game.IsRunning ? "" : "\n\nGame is paused.";
 
-        Snd(pInGame);
+        Snd(GetGamePlayersText());
         Snd();
         Snd($"We are currently on turn #{Context.Game.TurnNumber}");
         Snd(spoken);
         Snd($"{notSpoken}{extra}{paused}");
     }
 
-    private async Task<IEnumerable<Message>> GetMessages(Game game, int turn) {
-        var messages = await _dc.Messages
-            .Include(r => r.Player)
-            .Where(r => r.GameId == game.Id && r.Turn == turn)
-            .OrderBy(r => r.TelegramMessageId)
-            .ToListAsync(cancellationToken: Context.CancellationToken);
-        return messages;
+    private string GetGamePlayersText() {
+        var dmMention = Context.TheDm is not null ? Mention(Context.TheDm) : null;
+        var playerMentions = Context.Game.Players.Where(r => !r.IsDm).Select(Mention).DefaultIfEmpty("")
+            .Aggregate((x, y) => $"{x}, {y}");
+        var pInGame = Context.Game.Players.Any()
+            ? $"DM: {dmMention}\nCurrent players: {playerMentions}"
+            : "No one has joined the game yet.";
+        return pInGame;
     }
 
-    private async Task<Message?> GetOriginalMessage(Game game, int telegramMessageId) {
-        var originalMessage =
-            await _dc.Messages.SingleOrDefaultAsync(r =>
-                r.GameId == game.Id && r.TelegramMessageId == telegramMessageId, cancellationToken: Context.CancellationToken);
-
-        return originalMessage;
-    }
-
-    private async Task<Person> GetPerson(long userId) {
-        var person = await _dc.Persons
-            .Include(r => r.Players)
-            .ThenInclude(r => r.Game)
-            .SingleOrDefaultAsync(r => r.TelegramId == userId, cancellationToken: Context.CancellationToken);
-
-        if (person is not null) {
-            return person;
-        }
-
-        var newPerson = new Person {
-            InitiatedPrivateChat = false,
-            TelegramId = userId,
-        };
-
-        await _dc.Persons.AddAsync(newPerson, Context.CancellationToken);
-        await _dc.SaveChangesAsync(Context.CancellationToken);
-
-        return newPerson;
-    }
-
-    private async Task HandleEdit(CancellationToken cancellationToken = default) {
+    private async Task HandleEdit() {
         if (!Context.Game.IsRunning) {
             return;
         }
@@ -441,39 +374,42 @@ internal class GameManager {
             return;
         }
 
-        var originalMessage = await GetOriginalMessage(Context.Game, Context.TgMessage.MessageId);
+        var originalMessage =
+            await _repository.GetOriginalMessage(Context.Game, Context.TgMessage.MessageId, Context.CancellationToken);
 
         if (originalMessage is null || originalMessage.Text == Context.TgMessage.Text) {
             return;
         }
 
         if (originalMessage.Turn == Context.Game.TurnNumber) {
-            // This edit is allowed, save new TgMessage text.
+            // This edit is allowed, save new message text.
             originalMessage.Text = Context.TgMessage.Text ?? "";
             return;
         }
 
-        await Context.BotClient.DeleteMessageAsync(Context.Game.TelegramChannelId, Context.TgMessage.MessageId, cancellationToken);
+        await Context.BotClient.DeleteMessageAsync(Context.Game.TelegramChannelId, Context.TgMessage.MessageId,
+            Context.CancellationToken);
 
-        Snd($"{Context.SendingPlayer.DisplayName} has IsEdit their TgMessage from turn {originalMessage.Turn}, " +
-            "the IsEdit TgMessage has been deleted.");
+        Snd($"{Context.SendingPlayer.DisplayName} has edited their message from turn {originalMessage.Turn}, " +
+            "the edited message has been deleted.");
 
-        Prv($"You have IsEdit one of your in game messages from turn {originalMessage.Turn}. " +
-            "It is not allowed to edit past game messages, your IsEdit TgMessage has been deleted. " +
-            $"This was your IsEdit: {Context.TgMessage.Text}");
+        Prv($"You have edited one of your in game messages from turn {originalMessage.Turn}. " +
+            "It is not allowed to edit past game messages, your edited message has been deleted. " +
+            $"This was your edit: {Context.TgMessage.Text}");
     }
 
     private async Task HandleGameMessage() {
         if (!Context.Game.IsRunning) {
-            // Let the TgMessage through, the game is paused or not started
+            // Let the message through, the game is paused or not started
             return;
         }
 
-        var persona = await GetPerson(Context.SenderId);
+        var persona = await _repository.GetPerson(Context.SenderId);
         if (Context.SendingPlayer is not null) {
             if (Context.SendingPlayer.Played) {
                 try {
-                    await Context.BotClient.DeleteMessageAsync(Context.Game.TelegramChannelId, Context.TgMessage.MessageId,
+                    await Context.BotClient.DeleteMessageAsync(Context.Game.TelegramChannelId,
+                        Context.TgMessage.MessageId,
                         Context.CancellationToken);
                 }
                 catch {
@@ -481,43 +417,37 @@ internal class GameManager {
                 }
 
                 try {
-                    Prv($"You have already spoken this turn (turn #{Context.Game.TurnNumber}). This is your TgMessage:");
+                    Prv($"You have already spoken this turn (turn #{Context.Game.TurnNumber}). This is your message:");
                     Prv();
                     Prv(Context.MessageText ?? "");
                     persona.InitiatedPrivateChat = true;
                 }
                 catch (Exception) {
-                    Snd($"{Context.SenderFullName} has tried to send a TgMessage out of turn, but they did not initiate " +
-                        "a chat with me so I cannot preserve that TgMessage in their private chat.\n\n" +
-                        $"{Context.SenderFullName}, please send the bot a private TgMessage (or alternatively press " +
+                    Snd(
+                        $"{Context.SenderFullName} has tried to send a message out of turn, but they did not initiate " +
+                        "a chat with me so I cannot preserve that message in their private chat.\n\n" +
+                        $"{Context.SenderFullName}, please send the bot a private message (or alternatively press " +
                         "the 'Start' button in the private chat with the bot)");
                 }
             }
             else if (Context.MessageText is not null) {
-                await AddMessage(Context.Game, Context.SendingPlayer, Context.MessageText, Context.TgMessage.MessageId);
+                await _repository.AddMessage(Context.Game, Context.SendingPlayer, Context.MessageText,
+                    Context.TgMessage.MessageId);
 
                 //await botClient.EditMessageTextAsync(chatId, update.Message.MessageId, "zzzzzzzzzzz", cancellationToken: cancellationToken);
                 Context.SendingPlayer.Played = true;
 
-                if (Context.Game.Players.All(r => r.Played)) {
-                    foreach (var player in Context.Game.Players) {
-                        player.Played = false;
-                    }
-
-                    Context.Game.TurnNumber++;
-                    Snd("All players have spoken, a new turn has begun!");
-                    Snd($"This is turn #{Context.Game.TurnNumber}");
-                }
+                CheckIfEveryoneTalkedAndAdvanceTurn();
             }
         }
     }
 
-    private async Task HandleMemberAdded(string pInGame) {
+    private async Task HandleMemberAdded() {
         if (!Context.Game.IsRunning) {
             return;
         }
 
-        var persona = await GetPerson(Context.SenderId);
+        var persona = await _repository.GetPerson(Context.SenderId);
 
         foreach (var newMember in Context.NewChatMembers!) {
             var fromId2 = newMember.Id;
@@ -528,20 +458,20 @@ internal class GameManager {
                 var extra = persona.InitiatedPrivateChat
                     ? ""
                     : "\n\nNote: if this is your first time here, please go to the private chat with the bot " +
-                      "and send me a TgMessage (or you can just click the 'Start' button there)";
+                      "and send me a message (or you can just click the 'Start' button there)";
 
                 Snd($"Welcome, {fromName2}. Type /help for help, /status for game status, " +
                     "or type /play to join the game.");
-                Snd($"{pInGame}{extra}");
+                Snd($"{GetGamePlayersText()}{extra}");
             }
         }
     }
 
     private async Task HandlePrivateMessage() {
-        var persona = await GetPerson(Context.SenderId);
+        var persona = await _repository.GetPerson(Context.SenderId);
         if (!persona.InitiatedPrivateChat) {
-            Snd("Thank you for sending me a TgMessage, now I can reply to you privately if you " +
-                "accidentally speak out of turn so that your TgMessage won't get lost.");
+            Snd("Thank you for sending me a message, now I can reply to you privately if you " +
+                "accidentally speak out of turn so that your message won't get lost.");
             persona.InitiatedPrivateChat = true;
         }
         else {

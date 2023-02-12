@@ -1,0 +1,10 @@
+{
+  "sqltools.connections": [
+    {
+      "previewLimit": 50,
+      "driver": "SQLite",
+      "name": "rr",
+      "database": "${workspaceFolder:RoundRobinChatBot}/LocalConsoleTest/rrbot_data"
+    }
+  ]
+}

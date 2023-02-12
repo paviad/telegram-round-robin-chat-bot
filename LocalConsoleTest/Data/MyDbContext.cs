@@ -8,6 +8,11 @@ internal class MyDbContext : DbContext {
 
     public MyDbContext(DbContextOptions<MyDbContext> options) : base(options) { }
 
+    public DbSet<Person> Persons { get; set; }
+    public DbSet<Player> Players { get; set; }
+    public DbSet<Game> Games { get; set; }
+    public DbSet<Message> Messages { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         modelBuilder.Entity<Player>(e => {
             e.HasKey(r => r.Id);
@@ -44,9 +49,4 @@ internal class MyDbContext : DbContext {
             e.HasOne(r => r.Player).WithMany();
         });
     }
-
-    public DbSet<Person> Persons { get; set; }
-    public DbSet<Player> Players { get; set; }
-    public DbSet<Game> Games { get; set; }
-    public DbSet<Message> Messages { get; set; }
 }
