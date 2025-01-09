@@ -6,28 +6,20 @@ using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using Game = LocalConsoleTest.Data.Models.Game;
+using Game = RrBot.Data.Models.Game;
 
-namespace LocalConsoleTest;
+namespace RrBot;
 
-internal class MyBot : TelegramBotClient, IUpdateHandler, IUpdateReceiver {
-    private readonly ILogger<MyBot> _logger;
-    private readonly IServiceProvider _svcp;
-
+[method: UsedImplicitly]
+internal class MyBot(IOptions<TelegramOptions> opts, IServiceProvider svcp, ILogger<MyBot> logger)
+    : TelegramBotClient(opts.Value.ApiKey), IUpdateHandler, IUpdateReceiver {
     //public MyBot(TelegramBotClientOptions options, HttpClient? httpClient = null) : base(options, httpClient) { }
 
     //public MyBot(string token, HttpClient? httpClient = null) : base(token, httpClient) { }
 
-    [UsedImplicitly]
-    public MyBot(IOptions<TelegramOptions> opts, IServiceProvider svcp, ILogger<MyBot> logger) :
-        base(opts.Value.ApiKey) {
-        _svcp = svcp;
-        _logger = logger;
-    }
-
     public async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update,
         CancellationToken cancellationToken) {
-        using var scope = _svcp.CreateScope();
+        using var scope = svcp.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<Repository>();
         var gameManager = scope.ServiceProvider.GetRequiredService<GameManager>();
         var messageOrEditedMessage = update.Message ?? update.EditedMessage;
@@ -38,7 +30,7 @@ internal class MyBot : TelegramBotClient, IUpdateHandler, IUpdateReceiver {
 
         var chatId = messageOrEditedMessage.Chat.Id;
         var threadId = messageOrEditedMessage.MessageThreadId ?? 0;
-        _logger.LogInformation("chatid {chatId} {threadId}", chatId, messageOrEditedMessage.MessageThreadId);
+        logger.LogInformation("chatid {chatId} {threadId}", chatId, messageOrEditedMessage.MessageThreadId);
         var game = await repository.GetRunningGame(chatId, threadId, cancellationToken);
 
         var fromName = new[] { messageOrEditedMessage.From.FirstName, messageOrEditedMessage.From.LastName }
@@ -54,7 +46,7 @@ internal class MyBot : TelegramBotClient, IUpdateHandler, IUpdateReceiver {
             IsPrivateMessage: messageOrEditedMessage.Chat.Type == ChatType.Private,
             SenderId: messageOrEditedMessage.From.Id,
             SenderUsername: messageOrEditedMessage.From.Username,
-            IsMemberAddedNotification: messageOrEditedMessage.Type == MessageType.ChatMembersAdded,
+            IsMemberAddedNotification: messageOrEditedMessage.Type == MessageType.NewChatMembers,
             NewChatMembers: messageOrEditedMessage.NewChatMembers,
             MessageText: messageOrEditedMessage.Text,
             SenderFullName: fromName,
@@ -81,7 +73,7 @@ internal class MyBot : TelegramBotClient, IUpdateHandler, IUpdateReceiver {
         await repository.Save(cancellationToken);
     }
 
-    public Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception,
+    public Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, HandleErrorSource source,
         CancellationToken cancellationToken) {
         return Task.CompletedTask;
     }
@@ -93,12 +85,12 @@ internal class MyBot : TelegramBotClient, IUpdateHandler, IUpdateReceiver {
 
     private static async Task Prv(ITelegramBotClient botClient, long senderId, string msg,
         CancellationToken cancellationToken) =>
-        await botClient.SendTextMessageAsync(senderId, msg,
+        await botClient.SendMessage(senderId, msg,
             cancellationToken: cancellationToken, parseMode: ParseMode.Html);
 
     private static async Task Snd(ITelegramBotClient botClient, Game game, string msg,
         CancellationToken cancellationToken) =>
-        await botClient.SendTextMessageAsync(game.TelegramChannelId, msg,
+        await botClient.SendMessage(game.TelegramChannelId, msg,
             cancellationToken: cancellationToken, parseMode: ParseMode.Html,
             messageThreadId: game.TelegramThreadId == 0 ? null : game.TelegramThreadId);
 }

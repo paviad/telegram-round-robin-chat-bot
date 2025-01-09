@@ -1,10 +1,10 @@
-﻿using LocalConsoleTest.Data.Models;
+﻿using RrBot.Data.Models;
 using Telegram.Bot;
 using Telegram.Bot.Types;
-using Game = LocalConsoleTest.Data.Models.Game;
+using Game = RrBot.Data.Models.Game;
 using Message = Telegram.Bot.Types.Message;
 
-namespace LocalConsoleTest;
+namespace RrBot;
 
 internal record GameContext(
     Game Game,

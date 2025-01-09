@@ -1,3 +1,8 @@
 passwords.txt
 rrbot_data*
 *.session.sql
+.vs/
+.vscode/
+obj/
+bin/
+setvars.cmd

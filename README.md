@@ -15,7 +15,7 @@ This is a Telegram bot that manages and enforces round-robin style chat games.
 ### On your PC
 
 * Clone or download the repository
-* Enter directory `LocalConsoleTest`
+* Enter directory `RrBot`
 * Configure your secrets:
   * Run `dotnet user-secrets init`
   * Run `dotnet user-secrets set Telegram:ApiKey "<YOUR API KEY>"`

@@ -1,16 +1,10 @@
-﻿using LocalConsoleTest.Data;
-using LocalConsoleTest.Data.Models;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
+using RrBot.Data;
+using RrBot.Data.Models;
 
-namespace LocalConsoleTest;
+namespace RrBot;
 
-internal class Repository {
-    private readonly MyDbContext _dc;
-
-    public Repository(MyDbContext dc) {
-        _dc = dc;
-    }
-
+internal class Repository(MyDbContext dc) {
     public async Task AddMessage(Game game, Player player, string text, int telegramMessageId,
         CancellationToken cancellationToken = default) {
         var msg = new Message {
@@ -19,14 +13,15 @@ internal class Repository {
             Text = text,
             TelegramMessageId = telegramMessageId,
             Turn = game.TurnNumber,
+            Timestamp = DateTimeOffset.Now,
         };
 
-        await _dc.Messages.AddAsync(msg, cancellationToken);
+        await dc.Messages.AddAsync(msg, cancellationToken);
     }
 
     public async Task<IEnumerable<Message>> GetMessages(Game game, int turn,
         CancellationToken cancellationToken = default) {
-        var messages = await _dc.Messages
+        var messages = await dc.Messages
             .Include(r => r.Player)
             .Where(r => r.GameId == game.Id && r.Turn == turn)
             .OrderBy(r => r.TelegramMessageId)
@@ -37,14 +32,14 @@ internal class Repository {
     public async Task<Message?> GetOriginalMessage(Game game, int telegramMessageId,
         CancellationToken cancellationToken = default) {
         var originalMessage =
-            await _dc.Messages.SingleOrDefaultAsync(r =>
+            await dc.Messages.SingleOrDefaultAsync(r =>
                 r.GameId == game.Id && r.TelegramMessageId == telegramMessageId, cancellationToken: cancellationToken);
 
         return originalMessage;
     }
 
     public async Task<Person> GetPerson(long userId, CancellationToken cancellationToken = default) {
-        var person = await _dc.Persons
+        var person = await dc.Persons
             .Include(r => r.Players)
             .ThenInclude(r => r.Game)
             .SingleOrDefaultAsync(r => r.TelegramId == userId, cancellationToken: cancellationToken);
@@ -58,15 +53,15 @@ internal class Repository {
             TelegramId = userId,
         };
 
-        await _dc.Persons.AddAsync(newPerson, cancellationToken);
-        await _dc.SaveChangesAsync(cancellationToken);
+        await dc.Persons.AddAsync(newPerson, cancellationToken);
+        await dc.SaveChangesAsync(cancellationToken);
 
         return newPerson;
     }
 
     public async Task<Game> GetRunningGame(long channelId, int threadId,
         CancellationToken cancellationToken = default) {
-        var game = await _dc.Games
+        var game = await dc.Games
             .Include(r => r.Players)
             .FirstOrDefaultAsync(
                 r => r.TelegramChannelId == channelId && r.TelegramThreadId == threadId && !r.IsArchived,
@@ -82,12 +77,12 @@ internal class Repository {
             TelegramChannelId = channelId,
             TelegramThreadId = threadId,
         };
-        await _dc.Games.AddAsync(newGame, cancellationToken);
-        await _dc.SaveChangesAsync(cancellationToken);
+        await dc.Games.AddAsync(newGame, cancellationToken);
+        await dc.SaveChangesAsync(cancellationToken);
         return newGame;
     }
 
     public async Task Save(CancellationToken cancellationToken = default) {
-        await _dc.SaveChangesAsync(cancellationToken);
+        await dc.SaveChangesAsync(cancellationToken);
     }
 }
