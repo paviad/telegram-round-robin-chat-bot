@@ -6,3 +6,4 @@ rrbot_data*
 obj/
 bin/
 setvars.cmd
+secrets/

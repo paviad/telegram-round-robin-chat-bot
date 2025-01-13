@@ -69,6 +69,9 @@ internal class GameManager(Repository repository, ILogger<GameManager> logger) {
             else if (Context.MessageText == "/status") {
                 CmdStatus();
             }
+            else if (Context.MessageText == "/endturn") {
+                CmdEndTurn();
+            }
             else if (Context.MessageText == "/nudge") { }
             else if (Context.MessageText?.StartsWith("/showturn ") ?? false) {
                 await CmdShowTurn();
@@ -79,13 +82,17 @@ internal class GameManager(Repository repository, ILogger<GameManager> logger) {
         }
     }
 
+    private void AdvanceTurn() {
+        foreach (var player in Context.Game.Players) {
+            player.Played = false;
+        }
+
+        Context.Game.TurnNumber++;
+    }
+
     private void CheckIfEveryoneTalkedAndAdvanceTurn() {
         if (Context.Game.Players.All(r => r.Played)) {
-            foreach (var player in Context.Game.Players) {
-                player.Played = false;
-            }
-
-            Context.Game.TurnNumber++;
+            AdvanceTurn();
             Snd("All players have spoken, a new turn has begun!");
             Snd($"This is turn #{Context.Game.TurnNumber}");
         }
@@ -139,9 +146,25 @@ internal class GameManager(Repository repository, ILogger<GameManager> logger) {
         Snd($"Wrong confirmation code. If you're really sure, then type /endgame {Context.Game.ResetPassword}");
     }
 
+    private void CmdEndTurn() {
+        if (!Context.Game.IsRunning && !Context.Game.Players.Any()) {
+            Snd("No game has been started yet.");
+            return;
+        }
+
+        if (Context.SendingPlayer != Context.TheDm) {
+            Snd("Only the DM may end the turn early.");
+            return;
+        }
+
+        AdvanceTurn();
+        Snd("The DM has ended this turn early, a new turn has begun!");
+        Snd($"This is turn #{Context.Game.TurnNumber}");
+    }
+
     private void CmdHelp() {
         Snd("General commands: /help /status /play /showturn");
-        Snd("DM commands: /kick /pause /resume /endgame");
+        Snd("DM commands: /kick /pause /resume /endgame /endturn");
         Snd("To start a fresh game type /start");
     }
 

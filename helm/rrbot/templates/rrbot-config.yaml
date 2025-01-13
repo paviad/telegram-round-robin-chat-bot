@@ -3,5 +3,5 @@ kind: ConfigMap
 metadata:
   name: rrbot-config
 data:
-  Telegram__ApiKey: "6027576983:AAG4oJln9HSON8hgkfRubEOrZ-owHlH_YUM"
-  ConnectionStrings__DefaultConnection: "Data Source=tcp:sj9ksqco2x.database.windows.net,1433;Initial Catalog=rrbot;User Id=aviad@sj9ksqco2x;Password=Snake3badge3phone!"
+  Telegram__ApiKey: "__PLACEHOLDER__"
+  ConnectionStrings__DefaultConnection: "__PLACEHOLDER__"
